@@ -355,15 +355,16 @@ bool check_crc(byte data[], int len, byte crc) {
 
 ### Библиотеки:
 - [pyserial](https://pypi.org/project/pyserial/) — работа с последовательным портом
-- [SoftwareSerial](https://www.arduino.cc/reference/en/libraries/softwareserial/) — программная реализация UART
+- [SoftwareSerial](https://arduinogetstarted.com/tutorials/arduino-softwareserial) — программная реализация UART
 
 ### Полезные статьи:
-- [Протоколы связи в Arduino](https://www.arduino.cc/en/Tutorial/Serial)
+- [Протоколы связи в Arduino](https://alexgyver.ru/lessons/serial/)
 - [Примеры протоколов](https://en.wikipedia.org/wiki/Communication_protocol)
+- [Протокол UART] (https://repka-pi.ru/docs/94)
 
 ### Видео:
-- [Объяснение UART](https://www.youtube.com/watch?v=Vsa0N3Ho1ZU)
-- [Работа с протоколами](https://www.youtube.com/watch?v=1bLk115v0Kc)
+- [Объяснение UART](https://rutube.ru/video/74acfe8ba586911aa8af012cd53baf2b/)
+- [Работа с протоколами](https://yandex.ru/video/preview/4834464431570622392)
 
 ---
 
