@@ -360,7 +360,7 @@ bool check_crc(byte data[], int len, byte crc) {
 ### Полезные статьи:
 - [Протоколы связи в Arduino](https://alexgyver.ru/lessons/serial/)
 - [Примеры протоколов](https://en.wikipedia.org/wiki/Communication_protocol)
-- [Протокол UART] (https://repka-pi.ru/docs/94)
+- [Протокол UART](https://repka-pi.ru/docs/9)
 
 ### Видео:
 - [Объяснение UART](https://rutube.ru/video/74acfe8ba586911aa8af012cd53baf2b/)
