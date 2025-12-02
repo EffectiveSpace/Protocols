@@ -32,6 +32,86 @@
 
 ---
 
+## Что такое enum и FSM?
+
+### Enum (перечисление)
+
+**Enum** (сокращение от enumeration - перечисление) — это способ задать набор констант. Это удобно, когда у вас есть фиксированный набор значений. Вместо чисел `0`, `1`, `2` вы можете использовать понятные имена.
+
+**Пример:**
+```cpp
+#define RED 12
+#define YELLOW 11
+#define GREEN 10
+
+enum LightState {
+  RED_STATE,      // = 0
+  YELLOW_STATE,   // = 1
+  GREEN_STATE     // = 2
+};
+```
+
+Теперь вместо `digitalWrite(12, 1);` можно писать `digitalWrite(RED, 1);`, а вместо `data[0] = 1;` можно писать `data[0] = YELLOW_STATE;` — понятнее и удобнее!
+
+### FSM (Finite State Machine - конечный автомат)
+
+**FSM** — это модель поведения, которая в каждый момент времени находится *в одном* из конечного числа состояний. FSM переходит из одного состояния в другое при определённых условиях.
+
+**Пример: Светофор**
+- В состоянии `RED_STATE` включён красный свет
+- Через 5 секунд переходит в `YELLOW_STATE`
+- Через 2 секунды переходит в `GREEN_STATE`
+- Через 5 секунд снова в `RED_STATE`
+
+**Код светофора:**
+```cpp
+enum LightState {
+  RED_STATE,
+  YELLOW_STATE,
+  GREEN_STATE
+};
+
+LightState currentState = RED_STATE;
+
+void setup() {
+  pinMode(RED, OUTPUT);
+  pinMode(YELLOW, OUTPUT);
+  pinMode(GREEN, OUTPUT);
+}
+
+void loop() {
+  switch (currentState) {
+    case RED_STATE:
+      digitalWrite(RED, 1);
+      digitalWrite(YELLOW, 0);
+      digitalWrite(GREEN, 0);
+      delay(5000);
+      currentState = YELLOW_STATE;
+      break;
+
+    case YELLOW_STATE:
+      digitalWrite(RED, 0);
+      digitalWrite(YELLOW, 1);
+      digitalWrite(GREEN, 0);
+      delay(2000);
+      currentState = GREEN_STATE;
+      break;
+
+    case GREEN_STATE:
+      digitalWrite(RED, 0);
+      digitalWrite(YELLOW, 0);
+      digitalWrite(GREEN, 1);
+      delay(5000);
+      currentState = RED_STATE;
+      break;
+  }
+}
+```
+
+В протоколах FSM идеально подходит для обработки пакетов: сначала ждём `SYNC1`, потом `SYNC2`, затем длину данных, и т.д.
+
+---
+
 ## Структура протокола
 
 Мы будем использовать такую структуру пакета:
@@ -94,10 +174,33 @@ ser.write(packet)
 time.sleep(1)
 ser.close()
 
-### Arduino-код (приём)
+### Arduino-код (приём) - улучшенный с enum и FSM
 ```cpp
+// Определяем возможные команды через enum
+enum CommandType {
+  CMD_LED_ON = 0x01,
+  CMD_LED_OFF = 0x02,
+  CMD_LED_BLINK = 0x03,
+  CMD_GET_SENSOR = 0x04
+};
+
+// FSM состояния приёма пакета
+enum ReceiveState {
+  WAIT_SYNC1,
+  WAIT_SYNC2,
+  WAIT_LEN,
+  WAIT_DATA,
+  WAIT_CRC
+};
+
 const int SYNC1 = 0xAA;
 const int SYNC2 = 0x55;
+
+// Переменные для FSM
+ReceiveState currentState = WAIT_SYNC1;
+byte buffer[256]; // буфер для данных
+int dataIndex = 0;
+int expectedDataLen = 0;
 
 void setup() {
   Serial.begin(9600);
@@ -105,26 +208,85 @@ void setup() {
 }
 
 void loop() {
-  if (Serial.available() >= 4) { // минимум SYNC1, SYNC2, LEN, CRC
-    int sync1 = Serial.read();
-    if (sync1 == SYNC1) {
-      int sync2 = Serial.read();
-      if (sync2 == SYNC2) {
-        int len = Serial.read();
-        byte data[len];
+  // FSM для обработки входящих байтов
+  while (Serial.available()) {
+    byte incomingByte = Serial.read();
 
-        for (int i = 0; i < len; i++) {
-          data[i] = Serial.read();
+    switch (currentState) {
+      case WAIT_SYNC1:
+        if (incomingByte == SYNC1) {
+          currentState = WAIT_SYNC2;
         }
+        break;
 
-        byte received_crc = Serial.read();
-        if (check_crc(data, len, received_crc)) {
-          // Обработка данных
-          digitalWrite(LED_BUILTIN, data[0]);
+      case WAIT_SYNC2:
+        if (incomingByte == SYNC2) {
+          currentState = WAIT_LEN;
+        } else {
+          currentState = WAIT_SYNC1; // ошибка синхронизации
         }
-      }
+        break;
+
+      case WAIT_LEN:
+        expectedDataLen = incomingByte;
+        dataIndex = 0;
+        currentState = (expectedDataLen > 0) ? WAIT_DATA : WAIT_CRC;
+        break;
+
+      case WAIT_DATA:
+        buffer[dataIndex] = incomingByte;
+        dataIndex++;
+        if (dataIndex >= expectedDataLen) {
+          currentState = WAIT_CRC;
+        }
+        break;
+
+      case WAIT_CRC:
+        if (check_crc(buffer, expectedDataLen, incomingByte)) {
+          // Пакет принят успешно - обрабатываем команду
+          processCommand(buffer[0]);
+        }
+        currentState = WAIT_SYNC1; // возвращаемся к ожиданию следующего пакета
+        break;
     }
   }
+}
+
+void processCommand(byte command) {
+  switch(command) {
+    case CMD_LED_ON:
+      digitalWrite(LED_BUILTIN, HIGH);
+      break;
+    case CMD_LED_OFF:
+      digitalWrite(LED_BUILTIN, LOW);
+      break;
+    case CMD_LED_BLINK:
+      if (expectedDataLen > 1) {
+        blinkLED(buffer[1]); // количество миганий
+      }
+      break;
+    case CMD_GET_SENSOR:
+      sendSensorData();
+      break;
+    default:
+      // неизвестная команда
+      break;
+  }
+}
+
+void blinkLED(int times) {
+  for(int i = 0; i < times; i++) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(200);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(200);
+  }
+}
+
+void sendSensorData() {
+  // отправляем фиктивные данные сенсора
+  byte sensor_data[] = {0xAA, 0x55, 0x01, 25, 0xFF}; // температура 25°C
+  Serial.write(sensor_data, 5);
 }
 
 bool check_crc(byte data[], int len, byte crc) {
@@ -145,24 +307,30 @@ bool check_crc(byte data[], int len, byte crc) {
 
 **Шаги:**
 1. Добавить сервопривод к Arduino
-2. Изменить код: `data[0]` = угол поворота (0-180)
-3. Дополнить Python-код для отправки случайных углов
+2. Добавить новую команду в enum в Arduino: `CMD_SERVO_ANGLE`
+3. Изменить код: `data[0]` = команда, `data[1]` = угол поворота (0-180)
+4. Дополнить Python-код для отправки случайных углов
+5. Использовать FSM и switch-case в Arduino для обработки команды
 
 ### Задача 2: Датчик температуры
 **Цель:** Arduino отправляет температуру в Python, Python отображает её.
 
 **Шаги:**
 1. Подключить датчик температуры к Arduino (например, DS18B20)
-2. Arduino читает температуру и отправляет через протокол
-3. Python принимает и выводит значение
+2. Добавить команду запроса сенсора в enum в Arduino: `CMD_GET_SENSOR`
+3. Arduino читает температуру и отправляет через протокол
+4. Python принимает и выводит значение
+5. Использовать FSM и switch-case в Arduino для обработки команд
 
 ### Задача 3: Игра "угадай число"
 **Цель:** Python генерирует число, Arduino отображает его на 7-сегментном индикаторе.
 
 **Шаги:**
 1. Подключить 7-сегментный индикатор
-2. Python отправляет случайное число (0-9)
-3. Arduino отображает его
+2. Добавить команду отображения числа в enum в Arduino: `CMD_DISPLAY_NUMBER`
+3. Python отправляет случайное число (0-9)
+4. Arduino отображает его
+5. Использовать FSM и switch-case в Arduino для обработки команд
 
 ### Задача 4: Улучшенная защита
 **Цель:** Заменить простую CRC на более сложную (например, XOR всех байт).
@@ -170,14 +338,16 @@ bool check_crc(byte data[], int len, byte crc) {
 **Шаги:**
 1. Изменить формулу CRC в Python
 2. Обновить проверку CRC в Arduino
+3. Использовать FSM для корректной обработки состояний приёма в Arduino
 
 ### Задача 5: Множественные команды
-**Цель:** Добавить команды: "включить светодиод", "выключить светодиод", "мигать".
+**Цель:** Добавить команды: "включить светодиод", "выключить светодиод", "мигать" с использованием enum и FSM в Arduino.
 
 **Шаги:**
-1. `data[0]` = команда
-2. `data[1]` = параметр (например, время мигания)
-3. Добавить switch-case в Arduino
+1. `data[0]` = команда (используя enum в Arduino)
+2. `data[1]` = параметр (например, количество миганий)
+3. Использовать FSM для обработки состояний приёма пакета в Arduino
+4. Использовать switch-case для обработки команд в Arduino
 
 ---
 
